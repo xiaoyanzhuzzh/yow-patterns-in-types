@@ -2,6 +2,8 @@ package challenge1
 
 import core._, Syntax._
 
+import scala.util.{Failure, Success, Try}
+
 
 /*
  * Handling errors without exceptions....
@@ -46,7 +48,10 @@ sealed trait Result[A] {
   def fold[X](
     fail: Error => X,
     ok: A => X
-  ): X = ???
+  ): X = this match {
+    case Fail(a) => fail(a)
+    case Ok(b) => ok(b)
+  }
 
   /*
    * Exercise 1.2:
@@ -65,8 +70,10 @@ sealed trait Result[A] {
    *
    * Advanced: Try using flatMap.
    */
-  def map[B](f: A => B): Result[B] =
-    ???
+  def map[B](f: A => B): Result[B] = this match {
+    case Fail(a) => Fail(a)
+    case Ok(b) => Ok(f(b))
+  }
 
 
   /*
@@ -91,8 +98,10 @@ sealed trait Result[A] {
    *
    * Advanced: Try using fold.
    */
-  def flatMap[B](f: A => Result[B]): Result[B] =
-    ???
+  def flatMap[B](f: A => Result[B]): Result[B] = this match {
+    case Fail(a) => Fail(a)
+    case Ok(b) => f(b)
+  }
 
 
   /*
@@ -108,7 +117,10 @@ sealed trait Result[A] {
    *  = 10
    */
   def getOrElse(otherwise: => A): A =
-    ???
+    this match {
+      case Fail(a) => otherwise
+      case Ok(b) => b
+    }
 
 
   /*
@@ -130,7 +142,10 @@ sealed trait Result[A] {
    *  = Fail(Unauthorized)
    */
   def |||(alternative: => Result[A]): Result[A] =
-    ???
+    this match {
+      case Fail(a) => alternative
+      case Ok(b) => Ok(b)
+    }
 }
 
 object Result {
@@ -180,11 +195,20 @@ object Example {
    * Hint: Scala defines String#toInt, but warning it throws exceptions if it is not a valid Int :|
    */
   def request(body: String): Result[Int] =
-    ???
+    Try(body.toInt) match {
+      case Success(a) => Ok(a)
+      case Failure(_) => Fail(InvalidRequest)
+    }
+
 
   /* Parse the method if it is valid, otherwise fail with InvalidMethod. */
-  def method(method: String): Result[Method] =
-    ???
+  def method(method: String): Result[Method] = method match {
+    case "POST" => Ok(Post)
+    case "GET" => Ok(Get)
+    case "PUT" => Ok(Put)
+    case "DELETE" => Ok(Delete)
+    case _ => Fail(InvalidMethod)
+  }
 
   /*
    * Route method and path to an implementation.
@@ -198,9 +222,26 @@ object Example {
    *   DELETE *    -> Unauthorized
    *   *           -> NotFound
    */
-  def route(method: Method, path: String): Result[Int => Int] =
-    ???
+  def route(method: Method, path: String): Result[Int => Int] = method match {
+    case Get => path match {
+      case "/single" => Ok(_ * 1)
+      case "/double" => Ok(_ * 2)
+      case "/triple" => Ok(_ * 3)
+      case _ => Fail(NotFound)
+    }
+    case Post => Fail(Unauthorized)
+    case Put => Fail(Unauthorized)
+    case Delete => Fail(Unauthorized)
+    case _ => Fail(NotFound)
+  }
 
+  def route2(method: Method, path: String): Result[Int => Int] = (method, path) match {
+    case (Get, "/single") => Ok(identity)
+    case (Get, "/double") => Ok(_ * 2)
+    case (Get, "/triple") => Ok(_ * 3)
+    case (Put | Post | Delete, _) => Fail(Unauthorized)
+    case _ => Fail(NotFound)
+  }
   /*
    * Attempt to compute an `answer`, by:
    *  - determining method
@@ -208,13 +249,24 @@ object Example {
    *  - determing request value
    *  - using the implementation and request value to compute an answer.
    */
+  def service2(path: String, methodx: String, body: String): Result[Int] = {
+    request(body).flatMap(req =>
+      method(methodx).flatMap(m => route(m, path))
+        .map(routes => routes(req))
+    )
+  }
+
   def service(path: String, methodx: String, body: String): Result[Int] =
-    ???
+    for {
+      req <- request(body)
+      meth <- method(methodx)
+      routes <- route(meth, path)
+    } yield routes(req)
 
   /*
    * Sometimes we always an `answer`, so default to 0 if
    * our request failed in any way.
    */
   def run(path: String, method: String, body: String): Int =
-    ???
+    service(path, method, body).getOrElse(0)
 }
