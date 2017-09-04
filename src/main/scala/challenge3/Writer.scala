@@ -1,6 +1,8 @@
 package challenge3
 
-import core._, Syntax._
+import core._
+import Syntax._
+import com.sun.xml.internal.ws.policy.sourcemodel.ModelNode
 
 /*
  * A writer data type that represents the pair of some
@@ -22,7 +24,7 @@ case class Writer[W, A](log: W, value: A) {
    *
    */
   def map[B](f: A => B): Writer[W, B] =
-    ???
+    Writer(log, f(value))
 
   /*
    * Exercise 3.2:
@@ -33,8 +35,11 @@ case class Writer[W, A](log: W, value: A) {
    *   r.flatMap(f).flatMap(g) == r.flatMap(z => f(z).flatMap(g))
    *
    */
-  def flatMap[B](f: A => Writer[W, B])(implicit M: Monoid[W]): Writer[W, B] =
-    ???
+  def flatMap[B](f: A => Writer[W, B])(implicit M: Monoid[W]): Writer[W, B] = {
+    val nextWriter = f(value)
+    Writer(Monoid[W].append(log, nextWriter.log), nextWriter.value)
+  }
+
 }
 
 object Writer {
@@ -46,8 +51,7 @@ object Writer {
    *
    * Hint: Try using Writer constructor.
    */
-  def value[W: Monoid, A](a: A): Writer[W, A] =
-    ???
+  def value[W: Monoid, A](a: A): Writer[W, A] = Writer(Monoid[W].zero, a)
 
   /*
    * Exercise 3.4:
@@ -58,8 +62,7 @@ object Writer {
    *
    * Hint: Try using Writer constructor.
    */
-  def tell[W](w: W): Writer[W, Unit] =
-    ???
+  def tell[W](w: W): Writer[W, Unit] = Writer(w, ())
 
   /*
    * Exercise 3.5:
@@ -67,7 +70,9 @@ object Writer {
    * Sequence, a list of Readers, to a Reader of Lists.
    */
   def sequence[W: Monoid, A](writers: List[Writer[W, A]]): Writer[W, List[A]] =
-    ???
+    writers.foldRight(Writer(Monoid[W].zero, List[A]()))((next, acc) => {
+      Writer(Monoid[W].append(next.log, acc.log), next.value :: acc.value)
+    })
 
   class Writer_[W] {
     type l[a] = Writer[W, a]
@@ -119,17 +124,26 @@ object Example {
    * Hint: Writer(W, A) and Writer.sequence will be useful here.
    */
   def stocks(data: List[Stock]): (Stats, List[Stock]) =
-    ???
+    Writer.sequence(data.map(stock => {
+      val newCents = stock.cents + (if (stock.cents > 10000) 10 else 1000)
+      //Writer[Stats, Stock](
+      //  Stats(newCents, newCents, newCents, 1),
+      //  Stock(stock.ticker, stock.date, newCents)
+      //)
+//      Writer.tell(Stats(newCents, newCents, newCents, 1)).map(_ => Stock(stock.ticker, stock.date, newCents))
+      for {
+        _ <- Writer.tell(Stats(newCents, newCents, newCents, 1))
+      } yield Stock(stock.ticker, stock.date, newCents)
+    })).run
 
   /**
    * A monoid for Stats.
    */
   implicit def StatsMonoid: Monoid[Stats] =
     new Monoid[Stats] {
-      def zero =
-        ???
+      def zero = Stats(0, 0, 0, 0)
       def append(l: Stats, r: => Stats) =
-        ???
+        Stats(math.min(l.min, r.min), math.max(l.max, r.max), l.total + r.total, l.count + r.count)
     }
 
   def exampledata = List(
